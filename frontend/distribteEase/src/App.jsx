@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback,useRef } from "react";
 import axios from "axios";
 
 // ── API ────────────────────────────────────────────────────────────────────
-const api = axios.create({ baseURL: "http://localhost:8000" });
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000"
+});
 api.interceptors.request.use(cfg => {
   const t = localStorage.getItem("de_token");
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
