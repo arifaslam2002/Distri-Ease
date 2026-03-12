@@ -135,6 +135,8 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); -webkit
   justify-content: center;
   flex-shrink: 0;
 }
+.shop-name-link { cursor: default; }
+.show-sm        { display: none; }
 
 /* ── GRIDS ── */
 .g4  { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
@@ -171,6 +173,12 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); -webkit
   .sidebar.open { transform: translateX(0); }
   .main-wrap { margin-left: 0 !important; }
   .hbg-btn { display: flex !important; }
+   .shop-name-link {
+    cursor: pointer;
+    color: var(--accent);
+    text-decoration: underline dotted;
+  }
+  .show-sm { display: block; }
 }
 @media(max-width:640px) {
   .g4  { grid-template-columns:1fr 1fr; gap:10px; }
@@ -178,7 +186,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); -webkit
   .g32 { grid-template-columns:1fr; }
   .page-content { padding:14px; }
   .topbar { padding:12px 14px; }
-  .hide-sm { display:none !important; }
+  .hide-sm { display:none !important;}
 }
   html, body, #root {
   height: 100%;
@@ -634,12 +642,14 @@ const ProductRows = ({ rows, setRows, products }) => (
 
 // ── ORDERS PAGE ────────────────────────────────────────────────────────────
 const Orders = ({ toast }) => {
-  const [orders, sO]    = useState([]);   const [load, sL]     = useState(true);
-  const [modal, sM]     = useState(false); const [saving, sSv]  = useState(false);
-  const [editModal, sEM]= useState(false); const [editOrder, sEO] = useState(null);
-  const [shops, sSh]    = useState([]);   const [prods, sPr]   = useState([]);
-  const [shopId, sSi]   = useState("");   const [rows, sR]     = useState([{ product_id: "", quantity: 1 }]);
-  const [editRows, sER] = useState([]);   const [err, sErr]    = useState("");
+  const [orders, sO]     = useState([]);   const [load, sL]      = useState(true);
+  const [modal, sM]      = useState(false); const [saving, sSv]   = useState(false);
+  const [editModal, sEM] = useState(false); const [editOrder, sEO]= useState(null);
+  const [shopModal, sSM] = useState(false); const [shopOrders, sSOrd] = useState([]); 
+  const [selShop, sSS]   = useState(null);  const [shopLoad, sSL] = useState(false);
+  const [shops, sSh]     = useState([]);    const [prods, sPr]    = useState([]);
+  const [shopId, sSi]    = useState("");    const [rows, sR]      = useState([{ product_id: "", quantity: 1 }]);
+  const [editRows, sER]  = useState([]);    const [err, sErr]     = useState("");
 
   const load_ = useCallback(() => {
     sL(true);
@@ -648,19 +658,34 @@ const Orders = ({ toast }) => {
 
   useEffect(() => {
     load_();
-  api.get("/shops/shops").then(r => {
-  // ✅ handle array, object wrapper, or null safely
-  const raw = r.data;
-  const d = Array.isArray(raw) ? raw : raw?.shops || raw?.data || [];
-  sSh(d);
-  if (d[0]) sSi(String(d[0].id));
-}).catch(() => sSh([]));  // ✅ always set empty array on error
+    api.get("/shops/shops").then(r => {
+      const raw = r.data;
+      const d = Array.isArray(raw) ? raw : raw?.shops || raw?.data || [];
+      sSh(d);
+      if (d[0]) sSi(String(d[0].id));
+    }).catch(() => sSh([]));
     api.get("/products/products").then(r => {
       const d = r.data || [];
       sPr(d);
       if (d[0]) sR([{ product_id: String(d[0].id), quantity: 1 }]);
     }).catch(() => {});
   }, []);
+
+  // ── Open shop orders view ──
+  const openShopOrders = async (shopId, shopName) => {
+    sSS({ id: shopId, name: shopName });
+    sSL(true); sSM(true); sSOrd([]);
+    try {
+      const r = await api.get(`/orders/${shopId}/order`);
+      const raw = r.data;
+      const d = Array.isArray(raw) ? raw : raw?.orders || [];
+      sSOrd(d);
+    } catch {
+      sSOrd([]);
+    } finally {
+      sSL(false);
+    }
+  };
 
   const place = async () => {
     sErr(""); sSv(true);
@@ -669,68 +694,43 @@ const Orders = ({ toast }) => {
         items: rows.map(r => ({ product_id: parseInt(r.product_id), quantity: parseInt(r.quantity) }))
       });
       toast("🛒", "Order placed! 📱 Telegram sent");
-      sM(false);
-      load_();
+      sM(false); load_();
     } catch (e) {
       sErr(e.response?.data?.detail || "Failed to place order");
-    } finally {
-      sSv(false);
-    }
+    } finally { sSv(false); }
   };
 
   const openEdit = async (order) => {
-  sErr("");
-  try {
-    const r = await api.get(`/orders/order/${order.id}`);
-    
-    // ✅ normalize — backend returns order_id, frontend needs id
-    const orderData = {
-      ...r.data,
-      id: r.data.id || r.data.order_id,   // ← handles both shapes
-    };
-    
-    sEO(orderData);
-    
-    const items = r.data.products || [];
-    sER(items.map(p => ({
-      product_id: String(p.product_id),
-      quantity: p.quantity,
-    })));
-    sEM(true);
-  } catch {
-    toast("❌", "Failed to load order details");
-  }
-};
+    sErr("");
+    try {
+      const r = await api.get(`/orders/order/${order.id}`);
+      const orderData = { ...r.data, id: r.data.id || r.data.order_id };
+      sEO(orderData);
+      const items = r.data.products || [];
+      sER(items.map(p => ({ product_id: String(p.product_id), quantity: p.quantity })));
+      sEM(true);
+    } catch { toast("❌", "Failed to load order details"); }
+  };
+
   const saveEdit = async () => {
-  // ✅ guard — never call if id is missing
-  if (!editOrder?.id) {
-    sErr("Order ID is missing, please close and try again");
-    return;
-  }
-  
-  sErr(""); sSv(true);
-  try {
-    await api.patch(`/orders/order/${editOrder.id}`, {
-      items: editRows.map(r => ({
-        product_id: parseInt(r.product_id),
-        quantity: parseInt(r.quantity),
-      }))
-    });
-    toast("✏️", "Order updated!"); sEM(false); load_();
-  } catch (e) {
-    sErr(e.response?.data?.detail || "Failed to update order");
-  } finally {
-    sSv(false);
-  }
-};
+    if (!editOrder?.id) { sErr("Order ID is missing, please close and try again"); return; }
+    sErr(""); sSv(true);
+    try {
+      await api.patch(`/orders/order/${editOrder.id}`, {
+        items: editRows.map(r => ({ product_id: parseInt(r.product_id), quantity: parseInt(r.quantity) }))
+      });
+      toast("✏️", "Order updated!"); sEM(false); load_();
+    } catch (e) {
+      sErr(e.response?.data?.detail || "Failed to update order");
+    } finally { sSv(false); }
+  };
+
   const del = async (id) => {
     if (!confirm("Delete this order?")) return;
     try {
       await api.delete(`/orders/orders/${id}`);
       toast("🗑️", "Order deleted"); load_();
-    } catch {
-      toast("❌", "Failed to delete");
-    }
+    } catch { toast("❌", "Failed to delete"); }
   };
 
   return (
@@ -743,18 +743,25 @@ const Orders = ({ toast }) => {
         {load ? <Spin /> : (
           <div className="tbl-wrap">
             <table className="tbl" style={{ minWidth: 500 }}>
-              <thead>
-                <tr>
-                  <th className="th">Shop</th>
-                  <th className="th">Total</th>
-                  <th className="th hide-sm">Date</th>
-                  <th className="th">Actions</th>
-                </tr>
-              </thead>
+              <thead><tr>
+                <th className="th">Shop</th>
+                <th className="th">Total</th>
+                <th className="th hide-sm">Date</th>
+                <th className="th">Actions</th>
+              </tr></thead>
               <tbody>
                 {orders.length > 0 ? orders.map(o => (
                   <tr key={o.id} className="tr">
-                    <td className="td" style={{ fontWeight: 500 }}>{o.shop_name || `Shop #${o.shop_id}`}</td>
+                    <td className="td">
+                      {/* ── Clickable shop name ── */}
+                      <span
+                        onClick={() => openShopOrders(o.shop_id, o.shop_name || `Shop #${o.shop_id}`)}
+                        style={{ fontWeight: 500, color: "var(--accent)", cursor: "pointer", textDecoration: "underline dotted" }}
+                        title="View all orders for this shop"
+                      >
+                        {o.shop_name || `Shop #${o.shop_id}`}
+                      </span>
+                    </td>
                     <td className="td" style={{ color: "var(--accent)" }}>₹{o.Grand_total}</td>
                     <td className="td hide-sm" style={{ color: "var(--muted)" }}>{o.order_date?.split("T")[0] || "—"}</td>
                     <td className="td">
@@ -765,11 +772,7 @@ const Orders = ({ toast }) => {
                     </td>
                   </tr>
                 )) : (
-                  <tr>
-                    <td colSpan={5} style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 12 }}>
-                      No orders found
-                    </td>
-                  </tr>
+                  <tr><td colSpan={4} style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 12 }}>No orders found</td></tr>
                 )}
               </tbody>
             </table>
@@ -777,40 +780,74 @@ const Orders = ({ toast }) => {
         )}
       </Card>
 
+{/* ── Shop Orders Modal ── */}
+<Modal
+  open={shopModal} onClose={() => sSM(false)}
+  title={`Orders — ${selShop?.name || ""}`}
+  footer={<Btn onClick={() => sSM(false)}>Close</Btn>}
+>
+  {shopLoad ? <Spin /> : shopOrders.length > 0 ? (
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {shopOrders.map(o => (
+        <div key={o.id||o.order_id} style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden"}}>
+          {/* Order header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"var(--s2)"}}>
+            <span style={{fontSize:11,color:"var(--muted)"}}>
+              #{String(o.id||o.order_id).padStart(3,"0")} · {(o.order_date||"").split("T")[0]||"—"}
+            </span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:13,fontWeight:600,color:"var(--accent)"}}>
+                ₹{o.Grand_total||o.grand_total}
+              </span>
+              <Btn small onClick={()=>{
+                sSM(false);
+                openEdit({id: o.id||o.order_id});
+              }}>✏️ Edit</Btn>
+            </div>
+          </div>
+          {/* Products */}
+          <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:4}}>
+            {(o.products||o.items||[]).map(p=>(
+              <div key={p.product_id} style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                <span>{p.product_name}</span>
+                <span style={{color:"var(--muted)"}}>
+                  ×{p.quantity} <span style={{color:"var(--accent)"}}>₹{p.amount}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div style={{textAlign:"center",padding:32,color:"var(--muted)",fontSize:12}}>
+      No orders found for this shop
+    </div>
+  )}
+</Modal>
+
       {/* ── Place Order Modal ── */}
       <Modal
         open={modal} onClose={() => sM(false)} title="Place New Order"
-        footer={
-          <>
-            <Btn onClick={() => sM(false)}>Cancel</Btn>
-            <Btn primary onClick={place} disabled={saving}>{saving ? "Placing…" : "Place Order"}</Btn>
-          </>
-        }
+        footer={<><Btn onClick={() => sM(false)}>Cancel</Btn><Btn primary onClick={place} disabled={saving}>{saving ? "Placing…" : "Place Order"}</Btn></>}
       >
         <ErrMsg msg={err} />
         <SearchSelect
-          label="Shop"
-          placeholder="Search shop…"
-        options={(Array.isArray(shops)?shops:[]).map(s => ({ value: s.id, label: s.shop_name }))}
-          value={shopId}
-          onChange={val => sSi(String(val))}
+          label="Shop" placeholder="Search shop…"
+          options={(Array.isArray(shops) ? shops : []).map(s => ({ value: s.id, label: s.shop_name }))}
+          value={shopId} onChange={val => sSi(String(val))}
         />
         <ProductRows rows={rows} setRows={sR} products={prods} />
-        <div style={{marginTop:14,background:"rgba(108,99,255,.06)",border:"1px solid rgba(108,99,255,.2)",borderRadius:7,padding:"10px 12px",fontSize:11,color:"var(--muted)"}}>
-  📨 Telegram notification sent automatically
-</div>
+        <div style={{ marginTop: 14, background: "rgba(108,99,255,.06)", border: "1px solid rgba(108,99,255,.2)", borderRadius: 7, padding: "10px 12px", fontSize: 11, color: "var(--muted)" }}>
+          📨 Telegram notification sent automatically
+        </div>
       </Modal>
 
       {/* ── Edit Order Modal ── */}
       <Modal
         open={editModal} onClose={() => sEM(false)}
         title={`Edit Order #${String(editOrder?.id || "").padStart(3, "0")}`}
-        footer={
-          <>
-            <Btn onClick={() => sEM(false)}>Cancel</Btn>
-            <Btn primary onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Btn>
-          </>
-        }
+        footer={<><Btn onClick={() => sEM(false)}>Cancel</Btn><Btn primary onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Btn></>}
       >
         <ErrMsg msg={err} />
         {editOrder && (
@@ -833,9 +870,19 @@ const Shops = ({toast})=>{
   const [shops,sS]      = useState([]); const [load,sL]       = useState(true);
   const [modal,sM]      = useState(false); const [saving,sSv]  = useState(false);
   const [editModal,sEM] = useState(false); const [editShop,sSE]= useState(null);
+  const [shopModal,sSM] = useState(false); const [shopData,sSD]= useState(null);
+  const [shopLoad,sSL]  = useState(false);
   const [form,sF]       = useState({shop_name:"",phone:"",address:""});
   const [editForm,sEF]  = useState({shop_name:"",phone:"",address:""});
   const [err,sErr]      = useState("");
+
+  // ── order edit states ──
+  const [orderEditModal,sOEM] = useState(false);
+  const [editOrder,sEO]       = useState(null);
+  const [editRows,sER]        = useState([]);
+  const [prods,sPr]           = useState([]);
+  const [editSaving,sES]      = useState(false);
+  const [editErr,sEE]         = useState("");
 
   const load_=useCallback(()=>{
     sL(true);
@@ -844,7 +891,47 @@ const Shops = ({toast})=>{
       .catch(()=>sS([]))
       .finally(()=>sL(false));
   },[]);
-  useEffect(()=>load_(),[]);
+
+  useEffect(()=>{
+    load_();
+    api.get("/products/products").then(r=>sPr(r.data||[])).catch(()=>{});
+  },[]);
+
+  // ── open shop detail + orders ──
+  const openShop=async(shop)=>{
+    sSM(true); sSL(true); sSD(null);
+    try{
+      const r = await api.get(`/orders/${shop.id}/order`);
+      sSD({ shop, orders: r.data?.orders || [] });
+    } catch{
+      sSD({ shop, orders: [] });
+    } finally{ sSL(false); }
+  };
+
+  // ── open order edit from shop modal ──
+  const openOrderEdit=async(order_id)=>{
+    sEE(""); sSM(false);
+    try{
+      const r = await api.get(`/orders/order/${order_id}`);
+      const data = {...r.data, id: r.data.id || r.data.order_id};
+      sEO(data);
+      sER((r.data.products||[]).map(p=>({product_id:String(p.product_id), quantity:p.quantity})));
+      sOEM(true);
+    } catch{ toast("❌","Failed to load order"); }
+  };
+
+  // ── save order edit ──
+  const saveOrderEdit=async()=>{
+    if(!editOrder?.id){ sEE("Order ID missing"); return; }
+    sEE(""); sES(true);
+    try{
+      await api.patch(`/orders/order/${editOrder.id}`,{
+        items: editRows.map(r=>({product_id:parseInt(r.product_id), quantity:parseInt(r.quantity)}))
+      });
+      toast("✏️","Order updated!"); sOEM(false);
+    } catch(e){ sEE(e.response?.data?.detail||"Failed to update"); }
+    finally{ sES(false); }
+  };
 
   const add=async()=>{
     sErr(""); sSv(true);
@@ -888,13 +975,13 @@ const Shops = ({toast})=>{
       <Card>
         {load?<Spin/>:(
           <div className="tbl-wrap">
-            <table className="tbl" style={{minWidth:460}}>
+            <table className="tbl" style={{minWidth:200}}>
               <colgroup>
-                <col/><col style={{width:"110px"}}/><col style={{width:"140px"}}/><col style={{width:"75px"}}/><col style={{width:"110px"}}/>
+                <col/><col style={{width:"110px"}} className="hide-sm"/><col style={{width:"140px"}} className="hide-sm"/><col style={{width:"75px"}}/><col style={{width:"110px"}}/>
               </colgroup>
               <thead><tr>
                 <th className="th">Shop Name</th>
-                <th className="th">Phone</th>
+                <th className="th hide-sm">Phone</th>
                 <th className="th hide-sm">Address</th>
                 <th className="th">Status</th>
                 <th className="th">Actions</th>
@@ -902,8 +989,16 @@ const Shops = ({toast})=>{
               <tbody>
                 {shops.length>0?shops.map(s=>(
                   <tr key={s.id} className="tr">
-                    <td className="td" style={{fontWeight:500}}>{s.shop_name}</td>
-                    <td className="td" style={{color:"var(--muted)"}}>{s.phone||"—"}</td>
+                    <td className="td">
+                      <span className="shop-name-link" onClick={()=>openShop(s)} style={{fontWeight:500}}>
+                        {s.shop_name}
+                      </span>
+                      <div className="show-sm" style={{fontSize:10,color:"var(--muted)",marginTop:3,display:"flex",flexDirection:"column",gap:2}}>
+                        {s.phone&&<span>📞 {s.phone}</span>}
+                        {s.address&&<span>📍 {s.address}</span>}
+                      </div>
+                    </td>
+                    <td className="td hide-sm" style={{color:"var(--muted)"}}>{s.phone||"—"}</td>
                     <td className="td hide-sm" style={{color:"var(--muted)"}}>{s.address||"—"}</td>
                     <td className="td"><Badge label={s.is_active?"active":"inactive"} cfg={s.is_active?SC.active:SC.inactive}/></td>
                     <td className="td">
@@ -920,7 +1015,92 @@ const Shops = ({toast})=>{
         )}
       </Card>
 
-      {/* Add Modal */}
+      {/* ── Shop Detail + Orders Modal ── */}
+      <Modal open={shopModal} onClose={()=>sSM(false)}
+        title={shopData?.shop?.shop_name||"Shop Details"}
+        footer={<Btn onClick={()=>sSM(false)}>Close</Btn>}
+      >
+        {shopLoad?<Spin/>:(
+          <>
+            {shopData?.shop&&(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16,padding:"12px",background:"var(--s2)",borderRadius:8}}>
+                <div>
+                  <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>PHONE</div>
+                  <div style={{fontSize:13,fontWeight:500}}>{shopData.shop.phone||"—"}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>STATUS</div>
+                  <Badge label={shopData.shop.is_active?"active":"inactive"} cfg={shopData.shop.is_active?SC.active:SC.inactive}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>ADDRESS</div>
+                  <div style={{fontSize:13}}>{shopData.shop.address||"—"}</div>
+                </div>
+              </div>
+            )}
+
+            <div style={{fontSize:11,color:"var(--muted)",marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>
+              Orders ({shopData?.orders?.length||0})
+            </div>
+
+            {shopData?.orders?.length>0?(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {shopData.orders.map(o=>(
+                  <div key={o.order_id} style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"var(--s2)"}}>
+                      <span style={{fontSize:11,color:"var(--muted)"}}>
+                        #{String(o.order_id).padStart(3,"0")} · {o.order_date?.split("T")[0]||"—"}
+                      </span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:13,fontWeight:600,color:"var(--accent)"}}>₹{o.grand_total}</span>
+                        <Btn small onClick={()=>openOrderEdit(o.order_id)}>✏️ Edit</Btn>
+                      </div>
+                    </div>
+                    <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:4}}>
+                      {o.products.map(p=>(
+                        <div key={p.product_id} style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                          <span>{p.product_name}</span>
+                          <span style={{color:"var(--muted)"}}>×{p.quantity} <span style={{color:"var(--accent)"}}>₹{p.amount}</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ):(
+              <div style={{textAlign:"center",padding:"24px 0",color:"var(--muted)",fontSize:12}}>
+                No orders yet for this shop
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
+
+      {/* ── Edit Order Modal ── */}
+      <Modal open={orderEditModal} onClose={()=>sOEM(false)}
+        title={`Edit Order #${String(editOrder?.id||"").padStart(3,"0")}`}
+        footer={
+          <><Btn onClick={()=>sOEM(false)}>Cancel</Btn>
+          <Btn primary onClick={saveOrderEdit} disabled={editSaving}>
+            {editSaving?"Saving…":"Save Changes"}
+          </Btn></>
+        }
+      >
+        <ErrMsg msg={editErr}/>
+        {editOrder&&(
+          <div style={{marginBottom:16,padding:"10px 12px",background:"var(--s2)",borderRadius:7,fontSize:11,color:"var(--muted)",display:"flex",gap:16,flexWrap:"wrap"}}>
+            <span>Shop: <span style={{color:"var(--text)"}}>{editOrder.shop_name}</span></span>
+            <span>Date: <span style={{color:"var(--text)"}}>{editOrder.order_date?.split("T")[0]}</span></span>
+            <span>Total: <span style={{color:"var(--accent)"}}>₹{editOrder.Grand_total||editOrder.grand_total}</span></span>
+          </div>
+        )}
+        <ProductRows rows={editRows} setRows={sER} products={prods}/>
+        <div style={{marginTop:10,fontSize:10,color:"var(--muted)"}}>
+          💡 Set quantity to 0 to remove a product from the order
+        </div>
+      </Modal>
+
+      {/* ── Add Shop Modal ── */}
       <Modal open={modal} onClose={()=>sM(false)} title="Add New Shop"
         footer={<><Btn onClick={()=>sM(false)}>Cancel</Btn><Btn primary onClick={add} disabled={saving}>{saving?"Saving…":"Add Shop"}</Btn></>}>
         <ErrMsg msg={err}/>
@@ -929,7 +1109,7 @@ const Shops = ({toast})=>{
         <Field label="Address"   placeholder="Street, City"     value={form.address}   onChange={e=>sF({...form,address:e.target.value})}/>
       </Modal>
 
-      {/* Edit Modal */}
+      {/* ── Edit Shop Modal ── */}
       <Modal open={editModal} onClose={()=>sEM(false)} title={`Edit — ${editShop?.shop_name||""}`}
         footer={<><Btn onClick={()=>sEM(false)}>Cancel</Btn><Btn primary onClick={saveEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn></>}>
         <ErrMsg msg={err}/>
